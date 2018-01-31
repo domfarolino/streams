@@ -2757,12 +2757,19 @@ throws>SetUpReadableByteStreamControllerFromUnderlyingSource ( <var>stream</var>
       const bytes = new Uint8Array(writer.desiredSize);
       window.crypto.getRandomValues(bytes);
 
-      await writer.write(bytes);
+      // Purposefully don't await; awaiting writer.ready is enough.
+      writer.write(bytes);
     }
   }
 
   writeRandomBytesForever(myWritableStream).catch(e => console.error("Something broke", e));
   </code></pre>
+
+  Note how we don't <code>await</code> the promise returned by {{WritableStreamDefaultWriter/write()}}. Doing so would
+  prevent us from executing further writes until the previous one succeeded, which defeats the point of the stream's
+  <a>internal queue</a>. Instead, we <code>await</code> the {{WritableStreamDefaultWriter/ready}} promise. That promise
+  will fulfill when the <a lt="desired size to fill a stream's internal queue">desired size</a> becomes positive, which
+  might be before the write succeeds (especially in cases with a larger <a>high water mark</a>).
 </div>
 
 <h3 id="ws-class" interface lt="WritableStream">Class <code>WritableStream</code></h3>
@@ -5507,6 +5514,7 @@ Jake Archibald,
 Jake Verbaten,
 Janessa Det,
 Jens Nockert,
+Lennart Grahl,
 Mangala Sadhu Sangeet Singh Khalsa,
 Marcos Caceres,
 Marvin Hagemeister,
