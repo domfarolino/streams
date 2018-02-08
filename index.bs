@@ -453,9 +453,9 @@ ReadableStream(<var>underlyingSource</var> = {}, <var>strategy</var> = {})</h4>
 <emu-alg>
   1. Perform ! InitializeReadableStream(*this*).
   1. Let _type_ be ? GetV(_underlyingSource_, `"type"`).
-  1. Let _typeString_ be ? ToString(_type_).
   1. Let _size_ be ? GetV(_readableStrategy_, `"size"`).
   1. Let _highWaterMark_ be ? GetV(_readableStrategy_, `"highWaterMark"`).
+  1. Let _typeString_ be ? ToString(_type_).
   1. If _typeString_ is `"bytes"`,
     1. If _highWaterMark_ is *undefined*, let _highWaterMark_ be *0*.
     1. Set _highWaterMark_ to ? ValidateAndNormalizeHighWaterMark(_highWaterMark_).
@@ -2940,11 +2940,11 @@ WritableStream(<var>underlyingSink</var> = {}, <var>strategy</var> = {})</h4>
 <emu-alg>
   1. Perform ! InitializeWritableStream(_this_).
   1. Let _type_ be ? GetV(_underlyingSink_, `"type"`).
+  1. Let _size_ be ? GetV(_readableStrategy_, `"size"`).
+  1. Let _highWaterMark_ be ? GetV(_readableStrategy_, `"highWaterMark"`).
   1. If _type_ is not *undefined*, throw a *RangeError* exception. <p class="note">This is to allow us to add new
      potential types in the future, without backward-compatibility concerns.</p>
-  1. Let _size_ be ? GetV(_readableStrategy_, `"size"`).
   1. Let _sizeAlgorithm_ be ? MakeSizeAlgorithmFromSizeFunction(_size_).
-  1. Let _highWaterMark_ be ? GetV(_readableStrategy_, `"highWaterMark"`).
   1. If _highWaterMark_ is *undefined*, let _highWaterMark_ be *1*.
   1. Set _highWaterMark_ to ? ValidateAndNormalizeHighWaterMark(_highWaterMark_).
   1. Perform ? SetUpWritableStreamDefaultControllerFromUnderlyingSink(*this*, _underlyingSink_, _highWaterMark_,
