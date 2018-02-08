@@ -5074,14 +5074,14 @@ writable stream:
 
 <div class="note" id="note-web-socket-wrapping-examples">
   This specific style of wrapping a web socket interprets web socket messages directly as <a>chunks</a>.
-  This can be convenient in some cases, for example when <a>piping</a> to a <a>writable stream</a> or <a>transform
+  This can be a convenient abstraction, for example when <a>piping</a> to a <a>writable stream</a> or <a>transform
   stream</a> for which each web socket message makes sense as a chunk to consume or transform.
 
-  However, often when people talk about "adding streams support to web sockets", they are hoping instead for the ability
-  to send an individual web socket message in a streaming fashion, so that e.g. a file could be transferred in a single
-  message without holding all of its contents in memory on the client side. To accomplish this goal, we'd instead want
-  to allow individual web socket messages to themselves be {{ReadableStream}} instances. That isn't what we show in the
-  above example.
+  However, often when people talk about "adding streams support to web sockets", they are hoping instead for a new
+  capability to send an individual web socket message in a streaming fashion, so that e.g. a file could be transferred
+  in a single message without holding all of its contents in memory on the client side. To accomplish this goal, we'd
+  instead want to allow individual web socket messages to themselves be {{ReadableStream}} instances. That isn't what we
+  show in the above example.
 
   For more background, see <a href="https://github.com/w3c/webrtc-pc/issues/1732#issuecomment-358428651">this
   discussion</a>.
