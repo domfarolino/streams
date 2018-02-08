@@ -149,7 +149,7 @@ Code that writes into a writable stream using its public interface is known as a
 Producers also have the ability to <dfn lt="abort a writable stream">abort</dfn> a writable stream, using its
 {{WritableStream/abort()}} method. This indicates that the producer believes something has gone wrong, and that future
 writes should be discontinued. It puts the stream in an errored state, even without a signal from the <a>underlying
-sink</a>.
+sink</a>, and it discards all writes in the stream's <a>internal queue</a>.
 
 <h3 id="ts-model">Transform Streams</h3>
 
@@ -478,7 +478,7 @@ source</a>. Such objects may contain any of the following properties:
 <dl>
   <dt><dfn method for="underlying source">start(<var>controller</var>)</dfn></dt>
   <dd>
-    <p>A function that is called immediately upon creation of the {{ReadableStream}}.</p>
+    <p>A function that is called immediately during creation of the {{ReadableStream}}.</p>
 
     <p>Typically this is used adapt a <a>push source</a> by setting up relevant event listeners, as in the example of
     [[#example-rs-push-no-backpressure]], or to acquire access to a <a>pull source</a>, as in [[#example-rs-pull]].</p>
@@ -490,13 +490,17 @@ source</a>. Such objects may contain any of the following properties:
   <dt><dfn method for="underlying source">pull(<var>controller</var>)</dfn></dt>
   <dd>
     <p>A function that is called whenever the stream's <a>internal queue</a> of chunks becomes not full, i.e. whenever
-    the queue's <a lt="desired size to fill a stream's internal queue">desired size</a> becomes positive. It will be
-    called repeatedly until the queue reaches its <a>high water mark</a> (i.e. until the <a lt="desired size to fill a
-    stream's internal queue">desired size</a> becomes non-positive).</p>
+    the queue's <a lt="desired size to fill a stream's internal queue">desired size</a> becomes positive. Generally, it
+    will be called repeatedly until the queue reaches its <a>high water mark</a> (i.e. until the <a lt="desired size to
+    fill a stream's internal queue">desired size</a> becomes non-positive).</p>
 
     <p>For <a>push sources</a>, this can be used to resume a paused flow, as in [[#example-rs-push-backpressure]]. For
     <a>pull sources</a>, it is used to acquire new <a>chunks</a> to enqueue into the stream, as in
     [[#example-rs-pull]].</p>
+
+    <p>This function will not be called until {{underlying source/start()}} successfully completes. Additionally, it
+    will only be called repeatedly if it enqueues at least one chunk or fulfills a BYOB request; a no-op
+    {{underlying source/pull()}} implementation will not be continually called.</p>
 
     <p>If the function returns a promise, then it will not be called again until that promise fulfills. (If the
     promise rejects, the stream will become errored.) This is mainly used in the case of pull sources, where the
@@ -506,10 +510,13 @@ source</a>. Such objects may contain any of the following properties:
 
   <dt><dfn method for="underlying source">cancel(<var>reason</var>)</dfn></dt>
   <dd>
-    <p>A function that is called whenever the <a>consumer</a> signals they are no longer interested in the stream, via
-    {{ReadableStream/cancel()|stream.cancel()}}, {{ReadableStreamDefaultReader/cancel()|defaultReader.cancel()}}, or
+    <p>A function that is called whenever the <a>consumer</a> <a lt="cancel a readable stream">cancels</a> the stream,
+    via {{ReadableStream/cancel()|stream.cancel()}}, {{ReadableStreamDefaultReader/cancel()|defaultReader.cancel()}}, or
     {{ReadableStreamBYOBReader/cancel()|byobReader.cancel()}}. It takes as its argument the same value as was passed to
     those methods by the consumer.</p>
+
+    <p>Readable streams can additionally be canceled under certain conditions during <a>piping</a>; see the definition
+    of the {{ReadableStream/pipeTo()}} method for more details.</p>
 
     <p>For all streams, this is generally used to release access to the underlying resource; see for example
     [[#example-rs-push-no-backpressure]].</p>
@@ -2952,7 +2959,7 @@ sink</a>. Such objects may contain any of the following properties:
 <dl>
   <dt><dfn method for="underlying sink">start(<var>controller</var>)</dfn></dt>
   <dd>
-    <p>A function that is called immediately upon creation of the {{WritableStream}}.</p>
+    <p>A function that is called immediately during creation of the {{WritableStream}}.</p>
 
     <p>Typically this is used to acquire access to the <a>underlying sink</a> resource being represented.</p>
 
@@ -3004,9 +3011,11 @@ sink</a>. Such objects may contain any of the following properties:
   <dt><dfn method for="underlying sink">abort(<var>reason</var>)</dfn></dt>
   <dd>
     <p>A function that is called after the <a>producer</a> signals, via {{WritableStream/abort()|stream.abort()}} or
-    {{WritableStreamDefaultWriter/abort()|writer.abort()}}, that they wish to abruptly close the stream and put it in an
-    errored state, discarding any queued-up writes. It takes as its argument the same value as was passed to those
-    methods by the producer.</p>
+    {{WritableStreamDefaultWriter/abort()|writer.abort()}}, that they wish to <a lt="abort a writable stream">abort</a>
+    the stream. It takes as its argument the same value as was passed to those methods by the producer.</p>
+
+    <p>Writable streams can additionally be aborted under certain conditions during <a>piping</a>; see the definition
+    of the {{ReadableStream/pipeTo()}} method for more details.</p>
 
     <p>This function can clean up any held resources, much like {{underlying sink/close()}}, but perhaps with some
     custom handling.</p>
@@ -4178,7 +4187,7 @@ The {{TransformStream()}} constructor accepts as its first argument a JavaScript
 <dl>
   <dt><dfn method for="transformer">start(<var>controller</var>)</dfn></dt>
   <dd>
-    <p>A function that is called immediately upon creation of the {{TransformStream}}.</p>
+    <p>A function that is called immediately during creation of the {{TransformStream}}.</p>
 
     <p>Typically this is used enqueue prefix <a>chunks</a>, using
     {{TransformStreamDefaultController/enqueue()|controller.enqueue()}}. Those chunks will be read from the <a>readable
@@ -4222,6 +4231,9 @@ The {{TransformStream()}} constructor accepts as its first argument a JavaScript
     result will be communicated to the caller of {{WritableStreamDefaultWriter/write()|stream.writable.write()}}.
     Additionally, a rejected promise will error both the readable and writable sides of the stream. Throwing an
     exception is treated the same as returning a rejected promise.</p>
+
+    <p>(Note that there is no need to call {{TransformStreamDefaultController/close()|controller.close()}} inside
+    {{transformer/flush()}}; the stream will close automatically after this method successfully completes.)</p>
   </dd>
 </dl>
 
@@ -4656,10 +4668,11 @@ properties:
   <dd>
     <p>A function that computes and returns the size of the given <a>chunk</a> value.</p>
 
-    <p>The result is used to determine <a>backpressure</a>, manifesting via
+    <p>The result is used to determine <a>backpressure</a>, manifesting via the appropriate <code>desiredSize</code>
+    property: either
     {{ReadableStreamDefaultController/desiredSize|defaultController.desiredSize}},
     {{ReadableByteStreamController/desiredSize|byteController.desiredSize}}, or
-    {{WritableStreamDefaultWriter/desiredSize|writer.desiredSize}} depending on where the queuing strategy is being
+    {{WritableStreamDefaultWriter/desiredSize|writer.desiredSize}}, depending on where the queuing strategy is being
     used. For readable streams, it also governs when the <a>underlying source</a>'s {{underlying source/pull()}} method
     is called.</p>
 
