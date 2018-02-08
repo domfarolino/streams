@@ -2769,7 +2769,7 @@ throws>SetUpReadableByteStreamControllerFromUnderlyingSource ( <var>stream</var>
   <pre><code class="lang-javascript">
     function writeArrayToStream(array, writableStream) {
       const writer = writableStream.getWriter();
-      array.forEach(chunk => writer.write(chunk));
+      array.forEach(chunk => writer.write(chunk).catch(() => {}));
 
       return writer.close();
     }
@@ -2778,6 +2778,11 @@ throws>SetUpReadableByteStreamControllerFromUnderlyingSource ( <var>stream</var>
       .then(() => console.log("All done!"))
       .catch(e => console.error("Error with the stream: " + e));
   </code></pre>
+
+  Note how we use <code>.catch(() => {})</code> to suppress any rejections from the
+  {{WritableStreamDefaultWriter/write()}} method; we'll be notified of any fatal errors via a rejection of the
+  {{WritableStreamDefaultWriter/close()}} method, and leaving them un-caught would cause potential
+  {{unhandledrejection}} events and console warnings.
 </div>
 
 <div class="example" id="example-manual-write-with-error-handling">
@@ -2815,21 +2820,52 @@ throws>SetUpReadableByteStreamControllerFromUnderlyingSource ( <var>stream</var>
       await writer.ready;
 
       const bytes = new Uint8Array(writer.desiredSize);
-      window.crypto.getRandomValues(bytes);
+      crypto.getRandomValues(bytes);
 
       // Purposefully don't await; awaiting writer.ready is enough.
-      writer.write(bytes);
+      writer.write(bytes).catch(() => {});
     }
   }
 
   writeRandomBytesForever(myWritableStream).catch(e => console.error("Something broke", e));
   </code></pre>
 
-  Note how we don't <code>await</code> the promise returned by {{WritableStreamDefaultWriter/write()}}. Doing so would
-  prevent us from executing further writes until the previous one succeeded, which defeats the point of the stream's
-  <a>internal queue</a>. Instead, we <code>await</code> the {{WritableStreamDefaultWriter/ready}} promise. That promise
-  will fulfill when the <a lt="desired size to fill a stream's internal queue">desired size</a> becomes positive, which
-  might be before the write succeeds (especially in cases with a larger <a>high water mark</a>).
+  Note how we don't <code>await</code> the promise returned by {{WritableStreamDefaultWriter/write()}}; this would be
+  redundant with <code>await</code>ing the {{WritableStreamDefaultWriter/ready}} promise. Additionally, similar to <a
+  href="#example-manual-write-batch">a previous example</a>, we use the <code>.catch(() => {})</code> pattern on the
+  promises returned by {{WritableStreamDefaultWriter/write()}}; in this case we'll be notified about any failures
+  <code>await</code>ing the {{WritableStreamDefaultWriter/ready}} promise.
+</div>
+
+<div class="example" id="example-manual-write-dont-await">
+  To further emphasize how it's a bad idea to <code>await</code> the promise returned by
+  {{WritableStreamDefaultWriter/write()}}, consider a modification of the above example, where we continue to use the
+  {{WritableStreamDefaultWriter}} interface directly, but we don't control how many bytes we have to write at a given
+  time. In that case, the <a>backpressure</a>-respecting code looks the same:
+
+  <pre><code class="lang-javascript">
+  async function writeSuppliedBytesForever(writableStream, getBytes) {
+    const writer = writableStream.getWriter();
+
+    while (true) {
+      await writer.ready;
+
+      const bytes = getBytes();
+      writer.write(bytes).catch(() => {});
+    }
+  }
+  </code></pre>
+
+  Unlike the previous example, where—because we were always writing exactly
+  {{WritableStreamDefaultWriter/desiredSize|writer.desiredSize}} bytes each time—the
+  {{WritableStreamDefaultWriter/write()}} and {{WritableStreamDefaultWriter/ready}} promises were synchronized, in this
+  case it's quite possible that the {{WritableStreamDefaultWriter/ready}} promise fulfills before the one returned by
+  {{WritableStreamDefaultWriter/write()}} does. Remember, the {{WritableStreamDefaultWriter/ready}} promise fulfills
+  when the <a lt="desired size to fill a stream's internal queue">desired size</a> becomes positive, which might be
+  before the write succeeds (especially in cases with a larger <a>high water mark</a>).
+
+  In other words, <code>await</code>ing the return value of {{WritableStreamDefaultWriter/write()}} means you never
+  queue up writes in the stream's <a>internal queue</a>, instead only executing a write after the previous one succeeds.
 </div>
 
 <h3 id="ws-class" interface lt="WritableStream">Class <code>WritableStream</code></h3>
@@ -4232,8 +4268,9 @@ The {{TransformStream()}} constructor accepts as its first argument a JavaScript
     Additionally, a rejected promise will error both the readable and writable sides of the stream. Throwing an
     exception is treated the same as returning a rejected promise.</p>
 
-    <p>(Note that there is no need to call {{TransformStreamDefaultController/close()|controller.close()}} inside
-    {{transformer/flush()}}; the stream will close automatically after this method successfully completes.)</p>
+    <p>(Note that there is no need to call {{TransformStreamDefaultController/terminate()|controller.terminate()}}
+    inside {{transformer/flush()}}; the stream is already in the process of successfully closing down, and terminating
+    it would be counterproductive.)</p>
   </dd>
 </dl>
 
